@@ -53,18 +53,396 @@ app.registerExtension({
             title.textContent = "Storyboard Image Generation";
             
             const body = document.createElement("div");
-            body.textContent = "作者 正在思考。。。完成时间未知。。。";
             Object.assign(body.style, {
                 marginTop: "20px",
                 flex: "1",
+                position: "relative",
                 display: "flex",
                 justifyContent: "center",
                 alignItems: "center",
                 border: "1px dashed #444",
-                fontSize: "64px",
-                fontWeight: "bold",
-                textAlign: "center"
+                overflow: "hidden",
+                backgroundColor: "#111"
             });
+
+            const textDiv = document.createElement("div");
+            textDiv.innerHTML = "正在计划制作一个Comfyui的分镜工具。<br>此时作者正在思考。。。完成时间未知。。。";
+            Object.assign(textDiv.style, {
+                fontSize: "32px",
+                fontWeight: "bold",
+                color: "rgba(255, 255, 255, 0.3)", // Dimmed to be background-like
+                zIndex: "0",
+                pointerEvents: "none",
+                textAlign: "center",
+                userSelect: "none",
+                lineHeight: "1.6",
+                border: "2px solid rgba(255, 255, 255, 0.2)",
+                padding: "30px",
+                borderRadius: "10px",
+                backgroundColor: "rgba(0, 0, 0, 0.3)"
+            });
+
+            const canvas = document.createElement("canvas");
+            Object.assign(canvas.style, {
+                position: "absolute",
+                top: "0",
+                left: "0",
+                width: "100%",
+                height: "100%",
+                zIndex: "1",
+                outline: "none"
+            });
+            
+            // Score Display
+            const scoreDiv = document.createElement("div");
+            scoreDiv.textContent = "Score: 0";
+            Object.assign(scoreDiv.style, {
+                position: "absolute",
+                top: "20px",
+                left: "20px",
+                color: "#44ccff",
+                fontSize: "24px",
+                fontWeight: "bold",
+                zIndex: "5",
+                pointerEvents: "none",
+                fontFamily: "monospace"
+            });
+
+            // Game Over Overlay
+            const gameOverDiv = document.createElement("div");
+            Object.assign(gameOverDiv.style, {
+                position: "absolute",
+                top: "0",
+                left: "0",
+                width: "100%",
+                height: "100%",
+                backgroundColor: "rgba(0,0,0,0.9)",
+                display: "none",
+                flexDirection: "column",
+                justifyContent: "center",
+                alignItems: "center",
+                color: "white",
+                zIndex: "100"
+            });
+            
+            // Watermark
+            const watermark = document.createElement("div");
+            watermark.textContent = "按 ↑ ↓ ← → 接管控制 / Press Arrow Keys to Play";
+            Object.assign(watermark.style, {
+                position: "absolute",
+                bottom: "10px",
+                right: "10px",
+                color: "rgba(255, 255, 255, 0.5)",
+                fontSize: "12px",
+                zIndex: "2",
+                pointerEvents: "none"
+            });
+
+            body.appendChild(textDiv);
+            body.appendChild(canvas);
+            body.appendChild(scoreDiv);
+            body.appendChild(gameOverDiv);
+            body.appendChild(watermark);
+
+            // Snake Game Logic
+            let gameInterval;
+            
+            const startGame = () => {
+                const ctx = canvas.getContext('2d');
+                const cellSize = 20;
+                let width, height;
+                let cols, rows;
+                let obstacle = {x:0, y:0, w:0, h:0};
+
+                const resize = () => {
+                    width = body.clientWidth;
+                    height = body.clientHeight;
+                    canvas.width = width;
+                    canvas.height = height;
+                    cols = Math.floor(width / cellSize);
+                    rows = Math.floor(height / cellSize);
+                    
+                    // Calculate text obstacle zone
+                    const textRect = textDiv.getBoundingClientRect();
+                    const bodyRect = body.getBoundingClientRect();
+                    const margin = 1; // cell margin
+                    
+                    obstacle.x = Math.floor((textRect.left - bodyRect.left) / cellSize) - margin;
+                    obstacle.y = Math.floor((textRect.top - bodyRect.top) / cellSize) - margin;
+                    obstacle.w = Math.ceil(textRect.width / cellSize) + margin * 2;
+                    obstacle.h = Math.ceil(textRect.height / cellSize) + margin * 2;
+                };
+                resize();
+                window.addEventListener('resize', resize);
+
+                let snake = [];
+                let direction = {x: 1, y: 0}; // Velocity
+                let nextDirection = {x: 1, y: 0};
+                let food = null;
+                let score = 0;
+                let autoMode = true;
+                let isGameOver = false;
+                
+                const isObstacle = (x, y) => {
+                    return x >= obstacle.x && x < obstacle.x + obstacle.w &&
+                           y >= obstacle.y && y < obstacle.y + obstacle.h;
+                };
+
+                const updateScore = (val) => {
+                    score = val;
+                    scoreDiv.textContent = `Score: ${score}`;
+                };
+
+                const triggerGameOver = () => {
+                    isGameOver = true;
+                    let countdown = 5;
+                    gameOverDiv.style.display = "flex";
+                    
+                    const updateText = () => {
+                        gameOverDiv.innerHTML = `
+                            <h1 style="font-size: 48px; margin-bottom: 20px; color: #ff4444;">GAME OVER</h1>
+                            <div style="font-size: 32px; margin-bottom: 20px;">您的分数为: <span style="color: #44ccff;">${score}</span></div>
+                            <div style="font-size: 24px; color: #888;">${countdown} 秒后重新开始...</div>
+                        `;
+                    };
+                    
+                    updateText();
+                    
+                    const timer = setInterval(() => {
+                        countdown--;
+                        if (countdown <= 0) {
+                            clearInterval(timer);
+                            gameOverDiv.style.display = "none";
+                            isGameOver = false;
+                            resetGame();
+                        } else {
+                            updateText();
+                        }
+                    }, 1000);
+                };
+
+                const resetGame = () => {
+                    // Start at top-left to avoid center text
+                    snake = [
+                        {x: 5, y: 5},
+                        {x: 4, y: 5},
+                        {x: 3, y: 5}
+                    ];
+                    direction = {x: 1, y: 0};
+                    nextDirection = {x: 1, y: 0};
+                    updateScore(0);
+                    autoMode = true;
+                    spawnFood();
+                };
+
+                const spawnFood = () => {
+                    if (cols <= 0 || rows <= 0) return;
+                    
+                    let valid = false;
+                    let attempts = 0;
+                    const maxAttempts = 100;
+                    
+                    while (!valid && attempts < maxAttempts) {
+                        const fx = Math.floor(Math.random() * cols);
+                        const fy = Math.floor(Math.random() * rows);
+                        // Don't spawn on snake OR obstacle
+                        if (!snake.some(s => s.x === fx && s.y === fy) && !isObstacle(fx, fy)) {
+                            food = {x: fx, y: fy};
+                            valid = true;
+                        }
+                        attempts++;
+                    }
+                    
+                    // Fallback: scan for empty spot if random fails
+                    if (!valid) {
+                        for (let y = 0; y < rows; y++) {
+                            for (let x = 0; x < cols; x++) {
+                                if (!snake.some(s => s.x === x && s.y === y) && !isObstacle(x, y)) {
+                                    food = {x, y};
+                                    valid = true;
+                                    break;
+                                }
+                            }
+                            if (valid) break;
+                        }
+                    }
+                };
+
+                // AI Logic
+                const getAutoDirection = () => {
+                    const head = snake[0];
+                    const moves = [
+                        {x: 0, y: -1}, // Up
+                        {x: 0, y: 1},  // Down
+                        {x: -1, y: 0}, // Left
+                        {x: 1, y: 0}   // Right
+                    ];
+
+                    // Filter out moves that kill us immediately (walls, self, or obstacle)
+                    const safeMoves = moves.filter(m => {
+                        // Prevent 180 turn
+                        if (m.x === -direction.x && m.y === -direction.y) return false;
+                        
+                        const nx = head.x + m.x;
+                        const ny = head.y + m.y;
+                        
+                        // Wall collision
+                        if (nx < 0 || nx >= cols || ny < 0 || ny >= rows) return false;
+                        
+                        // Self collision
+                        if (snake.some(s => s.x === nx && s.y === ny)) return false;
+                        
+                        // Obstacle collision
+                        if (isObstacle(nx, ny)) return false;
+                        
+                        return true;
+                    });
+
+                    if (safeMoves.length === 0) return direction; // No hope
+
+                    // Sort safe moves by distance to food
+                    safeMoves.sort((a, b) => {
+                        const distA = Math.abs((head.x + a.x) - food.x) + Math.abs((head.y + a.y) - food.y);
+                        const distB = Math.abs((head.x + b.x) - food.x) + Math.abs((head.y + b.y) - food.y);
+                        return distA - distB;
+                    });
+
+                    return safeMoves[0];
+                };
+
+                // Input Handling
+                const handleKey = (e) => {
+                    if (isGameOver) return;
+
+                    const key = e.key;
+                    if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(key)) {
+                        e.preventDefault();
+                        
+                        if (autoMode) {
+                            autoMode = false;
+                            updateScore(0); // Reset score on takeover
+                            // Reset snake length to initial size (3)
+                            if (snake.length > 3) {
+                                snake = snake.slice(0, 3);
+                            }
+                        }
+                        
+                        if (key === 'ArrowUp' && direction.y === 0) nextDirection = {x: 0, y: -1};
+                        if (key === 'ArrowDown' && direction.y === 0) nextDirection = {x: 0, y: 1};
+                        if (key === 'ArrowLeft' && direction.x === 0) nextDirection = {x: -1, y: 0};
+                        if (key === 'ArrowRight' && direction.x === 0) nextDirection = {x: 1, y: 0};
+                    }
+                };
+                document.addEventListener('keydown', handleKey);
+
+                const update = () => {
+                    if (isGameOver) return;
+
+                    if (autoMode) {
+                        nextDirection = getAutoDirection();
+                    }
+                    
+                    direction = nextDirection;
+                    const head = snake[0];
+                    const newHead = {x: head.x + direction.x, y: head.y + direction.y};
+
+                    // Check Death (Wall, Self, or Obstacle)
+                    if (newHead.x < 0 || newHead.x >= cols || newHead.y < 0 || newHead.y >= rows || 
+                        snake.some(s => s.x === newHead.x && s.y === newHead.y) ||
+                        isObstacle(newHead.x, newHead.y)) {
+                        triggerGameOver();
+                        return;
+                    }
+
+                    snake.unshift(newHead);
+
+                    // Check Eat
+                    if (newHead.x === food.x && newHead.y === food.y) {
+                        updateScore(score + 5);
+                        spawnFood();
+                    } else {
+                        snake.pop();
+                    }
+                };
+
+                const draw = () => {
+                    // Clear
+                    ctx.clearRect(0, 0, width, height);
+
+                    // Draw Food
+                    if (food) {
+                        ctx.fillStyle = '#ff4444';
+                        const px = food.x * cellSize;
+                        const py = food.y * cellSize;
+                        ctx.beginPath();
+                        ctx.arc(px + cellSize/2, py + cellSize/2, cellSize/2 - 2, 0, Math.PI * 2);
+                        ctx.fill();
+                        // Shine
+                        ctx.fillStyle = 'white';
+                        ctx.beginPath();
+                        ctx.arc(px + cellSize/2 + 3, py + cellSize/2 - 3, 2, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+
+                    // Draw Snake
+                    snake.forEach((s, i) => {
+                        const px = s.x * cellSize;
+                        const py = s.y * cellSize;
+                        
+                        if (i === 0) {
+                            // Head
+                            ctx.fillStyle = autoMode ? '#00aa00' : '#0088ff'; // Green for AI, Blue for User
+                            ctx.fillRect(px, py, cellSize, cellSize);
+                            
+                            // Eyes
+                            ctx.fillStyle = 'white';
+                            let ex1 = 4, ey1 = 4, ex2 = 12, ey2 = 4; // Default Up
+                            if (direction.x === 1) { ex1 = 12; ey1 = 4; ex2 = 12; ey2 = 12; } // Right
+                            if (direction.x === -1) { ex1 = 4; ey1 = 4; ex2 = 4; ey2 = 12; } // Left
+                            if (direction.y === 1) { ex1 = 4; ey1 = 12; ex2 = 12; ey2 = 12; } // Down
+                            
+                            ctx.beginPath(); ctx.arc(px + ex1, py + ey1, 2, 0, Math.PI*2); ctx.fill();
+                            ctx.beginPath(); ctx.arc(px + ex2, py + ey2, 2, 0, Math.PI*2); ctx.fill();
+                        } else {
+                            // Body
+                            ctx.fillStyle = autoMode ? '#44ff44' : '#44ccff';
+                            ctx.fillRect(px, py, cellSize, cellSize);
+                            ctx.strokeStyle = '#222';
+                            ctx.lineWidth = 1;
+                            ctx.strokeRect(px, py, cellSize, cellSize);
+                        }
+                    });
+                };
+
+                resetGame();
+                gameInterval = setInterval(() => {
+                    update();
+                    draw();
+                }, 80); // Speed
+
+                // Cleanup function to be called when modal closes
+                return () => {
+                    clearInterval(gameInterval);
+                    document.removeEventListener('keydown', handleKey);
+                    window.removeEventListener('resize', resize);
+                };
+            };
+
+            const cleanupGameRef = { current: null };
+
+            // Start animation after a short delay to ensure layout is done and DOM is ready
+            setTimeout(() => {
+                if (document.body.contains(modal)) {
+                    cleanupGameRef.current = startGame();
+                }
+            }, 100);
+
+            // Clean up on close
+            const originalClose = closeBtn.onclick;
+            closeBtn.onclick = () => {
+                if (cleanupGameRef.current) cleanupGameRef.current();
+                originalClose();
+            };
 
             content.appendChild(closeBtn);
             content.appendChild(title);
