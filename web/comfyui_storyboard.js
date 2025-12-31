@@ -163,14 +163,17 @@ app.registerExtension({
                     rows = Math.floor(height / cellSize);
                     
                     // Calculate text obstacle zone
-                    const textRect = textDiv.getBoundingClientRect();
-                    const bodyRect = body.getBoundingClientRect();
-                    const margin = 1; // cell margin
+                    // Use offset properties which are relative to the positioned parent (body)
+                    // This matches the canvas coordinate system exactly
+                    const startX = Math.floor(textDiv.offsetLeft / cellSize);
+                    const startY = Math.floor(textDiv.offsetTop / cellSize);
+                    const endX = Math.floor((textDiv.offsetLeft + textDiv.offsetWidth - 1) / cellSize);
+                    const endY = Math.floor((textDiv.offsetTop + textDiv.offsetHeight - 1) / cellSize);
                     
-                    obstacle.x = Math.floor((textRect.left - bodyRect.left) / cellSize) - margin;
-                    obstacle.y = Math.floor((textRect.top - bodyRect.top) / cellSize) - margin;
-                    obstacle.w = Math.ceil(textRect.width / cellSize) + margin * 2;
-                    obstacle.h = Math.ceil(textRect.height / cellSize) + margin * 2;
+                    obstacle.x = startX;
+                    obstacle.y = startY;
+                    obstacle.w = endX - startX + 1;
+                    obstacle.h = endY - startY + 1;
                 };
                 resize();
                 window.addEventListener('resize', resize);
