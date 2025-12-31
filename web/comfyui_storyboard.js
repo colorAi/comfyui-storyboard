@@ -144,10 +144,22 @@ app.registerExtension({
             body.appendChild(gameOverDiv);
             body.appendChild(watermark);
 
+            // Audio Setup
+            const bgMusic = new Audio("extensions/comfyui-storyboard/audio/bg.mp3");
+            bgMusic.loop = true;
+            bgMusic.volume = 0.3;
+
+            const endMusic = new Audio("extensions/comfyui-storyboard/audio/end.mp3");
+            endMusic.volume = 0.4;
+
             // Snake Game Logic
             let gameInterval;
             
             const startGame = () => {
+                // Try to play music
+                bgMusic.currentTime = 0;
+                bgMusic.play().catch(e => console.log("Audio play failed (autoplay policy?):", e));
+                
                 const ctx = canvas.getContext('2d');
                 const cellSize = 20;
                 let width, height;
@@ -198,6 +210,10 @@ app.registerExtension({
 
                 const triggerGameOver = () => {
                     isGameOver = true;
+                    bgMusic.pause();
+                    endMusic.currentTime = 0;
+                    endMusic.play().catch(e => console.log("End music failed:", e));
+                    
                     let countdown = 5;
                     gameOverDiv.style.display = "flex";
                     
@@ -217,6 +233,8 @@ app.registerExtension({
                             clearInterval(timer);
                             gameOverDiv.style.display = "none";
                             isGameOver = false;
+                            endMusic.pause();
+                            endMusic.currentTime = 0;
                             resetGame();
                         } else {
                             updateText();
@@ -225,6 +243,11 @@ app.registerExtension({
                 };
 
                 const resetGame = () => {
+                    // Ensure BG music is playing if it was stopped
+                    if (bgMusic.paused && !isGameOver) {
+                        bgMusic.play().catch(e => console.log("BG music resume failed:", e));
+                    }
+
                     // Start at top-left to avoid center text
                     snake = [
                         {x: 5, y: 5},
@@ -501,6 +524,8 @@ app.registerExtension({
             const originalClose = closeBtn.onclick;
             closeBtn.onclick = () => {
                 if (cleanupGameRef.current) cleanupGameRef.current();
+                bgMusic.pause();
+                endMusic.pause();
                 originalClose();
             };
 
