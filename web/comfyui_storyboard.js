@@ -271,11 +271,68 @@ app.registerExtension({
                 // AI Logic
                 const getAutoDirection = () => {
                     const head = snake[0];
+                    
+                    // BFS to find shortest path to food
+                    const visited = new Set();
+                    const parents = new Map();
+                    const queue = [head];
+                    visited.add(`${head.x},${head.y}`);
+                    
+                    // Create collision set for fast lookup (snake body)
+                    const snakeBodySet = new Set();
+                    snake.forEach(s => snakeBodySet.add(`${s.x},${s.y}`));
+                    
+                    let foundTarget = null;
+                    
+                    while (queue.length > 0) {
+                        const curr = queue.shift();
+                        
+                        if (curr.x === food.x && curr.y === food.y) {
+                            foundTarget = curr;
+                            break;
+                        }
+                        
+                        const moves = [
+                            {x: 0, y: -1}, {x: 0, y: 1}, {x: -1, y: 0}, {x: 1, y: 0}
+                        ];
+                        
+                        for (const m of moves) {
+                            const nx = curr.x + m.x;
+                            const ny = curr.y + m.y;
+                            const key = `${nx},${ny}`;
+                            
+                            if (!visited.has(key)) {
+                                // Check bounds
+                                if (nx >= 0 && nx < cols && ny >= 0 && ny < rows) {
+                                    // Check obstacles
+                                    const isSnake = snakeBodySet.has(key);
+                                    const isText = isObstacle(nx, ny);
+                                    
+                                    if (!isSnake && !isText) {
+                                        visited.add(key);
+                                        parents.set(key, curr);
+                                        queue.push({x: nx, y: ny});
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    
+                    if (foundTarget) {
+                        // Reconstruct path to get the first move
+                        let curr = foundTarget;
+                        while (true) {
+                            const parent = parents.get(`${curr.x},${curr.y}`);
+                            if (parent.x === head.x && parent.y === head.y) {
+                                return {x: curr.x - head.x, y: curr.y - head.y};
+                            }
+                            curr = parent;
+                        }
+                    }
+
+                    // Fallback: Greedy if no path found (e.g. trapped)
                     const moves = [
-                        {x: 0, y: -1}, // Up
-                        {x: 0, y: 1},  // Down
-                        {x: -1, y: 0}, // Left
-                        {x: 1, y: 0}   // Right
+                        {x: 0, y: -1}, {x: 0, y: 1}, {x: -1, y: 0}, {x: 1, y: 0}
                     ];
 
                     // Filter out moves that kill us immediately (walls, self, or obstacle)
