@@ -1,0 +1,31 @@
+{
+    "presets": {
+        "default": {
+            "name": "Qwen-Edit-2511",
+            "azimuth": {
+                "0": "front view",
+                "45": "front-right view",
+                "90": "right side view",
+                "135": "back-right view",
+                "180": "back view",
+                "225": "back-left view",
+                "270": "left side view",
+                "315": "front-left view"
+            },
+            "elevation": {
+                "-30": "low angle",
+                "0": "eye level",
+                "30": "high angle",
+                "60": "bird's eye view",
+                "90": "top-down view"
+            },
+            "zoom": {
+                "0": "wide shot",
+                "2": "medium-wide shot",
+                "4": "medium shot",
+                "6": "medium close-up",
+                "8": "close-up"
+            }
+        }
+    }
+}

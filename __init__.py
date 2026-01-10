@@ -102,3 +102,107 @@ NODE_DISPLAY_NAME_MAPPINGS = {
 }
 
 WEB_DIRECTORY = "./web"
+
+# Presets setup
+PRESETS_FILE = os.path.join(os.path.dirname(__file__), "presets.json")
+
+def init_presets():
+    if not os.path.exists(PRESETS_FILE):
+        default_preset = {
+            "name": "Qwen-Edit-2511",
+            "azimuth": {
+                "0": "front view",
+                "45": "front-right view",
+                "90": "right side view",
+                "135": "back-right view",
+                "180": "back view",
+                "225": "back-left view",
+                "270": "left side view",
+                "315": "front-left view"
+            },
+            "elevation": {
+                "-30": "low angle",
+                "0": "eye level",
+                "30": "high angle",
+                "60": "bird's eye view",
+                "90": "top-down view"
+            },
+            "zoom": {
+                "0": "wide shot",
+                "2": "medium-wide shot", 
+                "4": "medium shot",
+                "6": "medium close-up",
+                "8": "close-up"
+            }
+        }
+        data = {"presets": {"default": default_preset}}
+        with open(PRESETS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=4, ensure_ascii=False)
+
+init_presets()
+
+# API Routes for Presets
+@PromptServer.instance.routes.get("/storyboard/presets/list")
+async def list_presets(request):
+    try:
+        if os.path.exists(PRESETS_FILE):
+            with open(PRESETS_FILE, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            return web.json_response(data)
+        return web.json_response({"presets": {}})
+    except Exception as e:
+        print(f"Error listing presets: {e}")
+        return web.json_response({"status": "error", "message": str(e)}, status=500)
+
+@PromptServer.instance.routes.post("/storyboard/presets/save")
+async def save_preset(request):
+    try:
+        req_data = await request.json()
+        preset_id = req_data.get("id")
+        preset_data = req_data.get("data")
+        
+        if not preset_id or not preset_data:
+            return web.json_response({"status": "error", "message": "Missing id or data"}, status=400)
+
+        data = {"presets": {}}
+        if os.path.exists(PRESETS_FILE):
+            with open(PRESETS_FILE, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+        
+        data["presets"][preset_id] = preset_data
+        
+        with open(PRESETS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=4, ensure_ascii=False)
+            
+        return web.json_response({"status": "success"})
+    except Exception as e:
+        print(f"Error saving preset: {e}")
+        return web.json_response({"status": "error", "message": str(e)}, status=500)
+
+@PromptServer.instance.routes.post("/storyboard/presets/delete")
+async def delete_preset(request):
+    try:
+        req_data = await request.json()
+        preset_id = req_data.get("id")
+        
+        if not preset_id:
+             return web.json_response({"status": "error", "message": "Missing id"}, status=400)
+             
+        if os.path.exists(PRESETS_FILE):
+            with open(PRESETS_FILE, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            
+            if preset_id in data["presets"]:
+                del data["presets"][preset_id]
+                
+                with open(PRESETS_FILE, 'w', encoding='utf-8') as f:
+                    json.dump(data, f, indent=4, ensure_ascii=False)
+                return web.json_response({"status": "success"})
+            else:
+                return web.json_response({"status": "error", "message": "Preset not found"}, status=404)
+        return web.json_response({"status": "error", "message": "Presets file not found"}, status=404)
+
+    except Exception as e:
+        print(f"Error deleting preset: {e}")
+        return web.json_response({"status": "error", "message": str(e)}, status=500)
+

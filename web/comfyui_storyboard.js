@@ -62,7 +62,24 @@ app.registerExtension({
                 noShotsRun: "没有分镜卡片可运行！请先添加分镜。",
                 shot: "Shot", // Internal mostly
                 clickEnlarge: "点击放大查看",
-                close: "✕ 关闭"
+                clickEnlarge: "点击放大查看",
+                close: "✕ 关闭",
+                presets: "相机预设",
+                presetEditor: "预设编辑器",
+                presetName: "预设名称",
+                savePreset: "保存预设",
+                deletePreset: "删除预设",
+                selectPreset: "选择预设:",
+                confirmDeletePreset: "确定要删除预设",
+                azimuthSettings: "水平角度设置 (8个方向)",
+                elevationSettings: "垂直角度设置 (5个角度)",
+                zoomSettings: "缩放设置 (5个级别)",
+                presetSaved: "预设已保存！",
+                presetDeleted: "预设已删除！",
+                addField: "添加字段",
+                deleteField: "删除字段",
+                enterNewValue: "请输入新数值 (数字):",
+                confirmDeleteField: "确认删除字段",
             },
             en: {
                 title: "Storyboard Image Generation",
@@ -116,7 +133,24 @@ app.registerExtension({
                 noShotsRun: "No shots to run! Please add shots first.",
                 shot: "Shot",
                 clickEnlarge: "Click to enlarge",
-                close: "✕ Close"
+                clickEnlarge: "Click to enlarge",
+                close: "✕ Close",
+                presets: "Camera Presets",
+                presetEditor: "Preset Editor",
+                presetName: "Preset Name",
+                savePreset: "Save Preset",
+                deletePreset: "Delete Preset",
+                selectPreset: "Select Preset:",
+                confirmDeletePreset: "Are you sure to delete preset",
+                azimuthSettings: "Azimuth Settings (8 directions)",
+                elevationSettings: "Elevation Settings (5 levels)",
+                zoomSettings: "Zoom Settings (5 levels)",
+                presetSaved: "Preset saved!",
+                presetDeleted: "Preset deleted!",
+                addField: "Add Field",
+                deleteField: "Delete Field",
+                enterNewValue: "Enter new value (number):",
+                confirmDeleteField: "Are you sure you want to delete field",
             }
         };
 
@@ -147,6 +181,653 @@ app.registerExtension({
             if (langBtn) {
                 langBtn.textContent = translations[currentLang].langBtn;
             }
+        };
+
+        // Preset Manager
+        const PresetManager = {
+            presets: {},
+            currentPresetId: 'default',
+
+            async loadPresets() {
+                try {
+                    const res = await api.fetchApi("/storyboard/presets/list");
+                    if (res.status === 200) {
+                        const data = await res.json();
+                        if (data && data.presets) {
+                            this.presets = data.presets;
+                        }
+                    }
+                } catch (e) {
+                    console.error("Failed to load presets:", e);
+                }
+            },
+
+            getPreset(id) {
+                return this.presets[id] || this.presets['default'];
+            },
+
+            async savePreset(id, data) {
+                try {
+                    await api.fetchApi("/storyboard/presets/save", {
+                        method: "POST",
+                        body: JSON.stringify({ id, data }),
+                        headers: { "Content-Type": "application/json" }
+                    });
+                    this.presets[id] = data;
+                    return true;
+                } catch (e) {
+                    console.error("Failed to save preset:", e);
+                    return false;
+                }
+            },
+
+            async deletePreset(id) {
+                try {
+                    await api.fetchApi("/storyboard/presets/delete", {
+                        method: "POST",
+                        body: JSON.stringify({ id }),
+                        headers: { "Content-Type": "application/json" }
+                    });
+                    delete this.presets[id];
+                    return true;
+                } catch (e) {
+                    console.error("Failed to delete preset:", e);
+                    return false;
+                }
+            },
+
+            // Get prompt for specific camera state based on current preset
+            getPrompt(azimuth, elevation, zoom, presetId = null) {
+                const preset = this.getPreset(presetId || this.currentPresetId);
+                if (!preset) return "";
+
+                // Logic to map angles to keys
+                // Azimuth (0-360, 8 directions -> 45 deg steps)
+                // Keys in default preset are "0", "45", "90"...
+                // We need to find the closest key
+
+                const normalizeAngle = (a) => ((a % 360) + 360) % 360;
+                const az = normalizeAngle(azimuth);
+
+                // Map to closest 45 degree increment
+                let closestAz = 0;
+                let minDiff = 360;
+                const azKeys = Object.keys(preset.azimuth).map(Number);
+
+                for (let key of azKeys) {
+                    let diff = Math.abs(az - key);
+                    if (diff > 180) diff = 360 - diff; // Handle wraparound
+                    if (diff < minDiff) {
+                        minDiff = diff;
+                        closestAz = key;
+                    }
+                }
+                const azText = preset.azimuth[String(closestAz)] || "";
+
+                // Elevation (-30 to 90)
+                // Keys: -30, 0, 30, 60, 90
+                let closestEl = 0;
+                minDiff = 360;
+                const elKeys = Object.keys(preset.elevation).map(Number);
+
+                for (let key of elKeys) {
+                    let diff = Math.abs(elevation - key);
+                    if (diff < minDiff) {
+                        minDiff = diff;
+                        closestEl = key;
+                    }
+                }
+                const elText = preset.elevation[String(closestEl)] || "";
+
+                // Zoom (0-10)
+                // Keys: 0, 2, 4, 6, 8
+                let closestZoom = 0;
+                minDiff = 100;
+                const zoomKeys = Object.keys(preset.zoom).map(Number);
+
+                for (let key of zoomKeys) {
+                    let diff = Math.abs(zoom - key);
+                    if (diff < minDiff) {
+                        minDiff = diff;
+                        closestZoom = key;
+                    }
+                }
+                const zoomText = preset.zoom[String(closestZoom)] || "";
+
+                return `${azText}, ${elText}, ${zoomText}`;
+            }
+        };
+
+        // Load presets initially
+        PresetManager.loadPresets();
+
+        // Preset Editor Modal
+        const openPresetEditor = () => {
+            // Load latest presets
+            PresetManager.loadPresets().then(() => {
+                renderEditor();
+            });
+
+            const modalOverlay = document.createElement("div");
+            Object.assign(modalOverlay.style, {
+                position: "fixed",
+                top: "0",
+                left: "0",
+                width: "100%",
+                height: "100%",
+                backgroundColor: "rgba(0, 0, 0, 0.85)",
+                zIndex: "30000",
+                display: "flex",
+                justifyContent: "center",
+                alignItems: "center"
+            });
+
+            const modalContent = document.createElement("div");
+            Object.assign(modalContent.style, {
+                backgroundColor: "#1a1a1a",
+                borderRadius: "12px",
+                padding: "20px",
+                border: "1px solid #444",
+                boxShadow: "0 20px 60px rgba(0,0,0,0.5)",
+                width: "800px",
+                maxWidth: "95vw",
+                height: "90vh",
+                overflow: "hidden",
+                display: "flex",
+                flexDirection: "column"
+            });
+
+            // Header
+            const header = document.createElement("div");
+            Object.assign(header.style, {
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: "20px"
+            });
+            const title = document.createElement("h3");
+            title.textContent = t("presetEditor");
+            Object.assign(title.style, { margin: "0", color: "#44ccff", fontSize: "20px" });
+            const closeBtn = document.createElement("button");
+            closeBtn.textContent = "✕";
+            Object.assign(closeBtn.style, {
+                background: "transparent", border: "none", color: "#888", fontSize: "20px", cursor: "pointer"
+            });
+            closeBtn.onclick = () => modalOverlay.remove();
+            header.appendChild(title);
+            header.appendChild(closeBtn);
+            modalContent.appendChild(header);
+
+            // Content Area - Scrollable
+            const contentArea = document.createElement("div");
+            Object.assign(contentArea.style, {
+                flex: "1",
+                overflowY: "auto",
+                paddingRight: "10px"
+            });
+
+            // Controls: Select Preset, Name input, Save/Delete
+            const controlsDiv = document.createElement("div");
+            Object.assign(controlsDiv.style, {
+                display: "flex",
+                gap: "12px",
+                marginBottom: "20px",
+                alignItems: "center",
+                backgroundColor: "#2a2a2a",
+                padding: "15px",
+                borderRadius: "8px"
+            });
+
+            // Preset Select
+            const selectContainer = document.createElement("div");
+            selectContainer.style.flex = "1";
+            const selectLabel = document.createElement("div");
+            selectLabel.textContent = t("selectPreset");
+            selectLabel.style.marginBottom = "5px";
+            selectLabel.style.color = "#aaa";
+            selectLabel.style.fontSize = "12px";
+
+            const presetSelect = document.createElement("select");
+            Object.assign(presetSelect.style, {
+                width: "100%", padding: "8px", backgroundColor: "#111", border: "1px solid #444", color: "white", borderRadius: "4px"
+            });
+
+            selectContainer.appendChild(selectLabel);
+            selectContainer.appendChild(presetSelect);
+
+            // Name Input
+            const nameContainer = document.createElement("div");
+            nameContainer.style.flex = "1";
+            const nameLabel = document.createElement("div");
+            nameLabel.textContent = t("presetName");
+            nameLabel.style.marginBottom = "5px";
+            nameLabel.style.color = "#aaa";
+            nameLabel.style.fontSize = "12px";
+
+            const nameInput = document.createElement("input");
+            Object.assign(nameInput.style, {
+                width: "100%", padding: "8px", backgroundColor: "#111", border: "1px solid #444", color: "white", borderRadius: "4px"
+            });
+
+            nameContainer.appendChild(nameLabel);
+            nameContainer.appendChild(nameInput);
+
+            controlsDiv.appendChild(selectContainer);
+            controlsDiv.appendChild(nameContainer);
+            contentArea.appendChild(controlsDiv);
+
+            // Editor Sections Container
+            const sectionsContainer = document.createElement("div");
+            contentArea.appendChild(sectionsContainer);
+
+            // Footer Actions
+            const footer = document.createElement("div");
+            Object.assign(footer.style, {
+                marginTop: "20px",
+                display: "flex",
+                justifyContent: "flex-end",
+                gap: "12px",
+                paddingTop: "15px",
+                borderTop: "1px solid #333"
+            });
+
+            const deleteBtn = document.createElement("button");
+            deleteBtn.textContent = t("deletePreset");
+            Object.assign(deleteBtn.style, {
+                padding: "8px 16px", backgroundColor: "#aa4444", border: "none", borderRadius: "4px", color: "white", cursor: "pointer"
+            });
+
+            const saveBtn = document.createElement("button");
+            saveBtn.textContent = t("savePreset");
+            Object.assign(saveBtn.style, {
+                padding: "8px 16px", backgroundColor: "#44aa44", border: "none", borderRadius: "4px", color: "white", cursor: "pointer", fontWeight: "bold"
+            });
+
+            footer.appendChild(deleteBtn);
+            footer.appendChild(saveBtn);
+            modalContent.appendChild(contentArea);
+            modalContent.appendChild(footer);
+            modalOverlay.appendChild(modalContent);
+            document.body.appendChild(modalOverlay);
+
+            // Logic
+            let activePresetId = 'default';
+            let activeData = null; // Will hold the editing data
+
+            const loadActiveData = () => {
+                activeData = JSON.parse(JSON.stringify(PresetManager.getPreset(activePresetId)));
+            };
+
+            // Custom Modal for Adding Keys
+            const showAddKeyModal = (titleKey, onConfirm) => {
+                const overlay = document.createElement("div");
+                Object.assign(overlay.style, {
+                    position: "fixed", top: "0", left: "0", width: "100%", height: "100%",
+                    backgroundColor: "rgba(0,0,0,0.6)", zIndex: "31000",
+                    display: "flex", justifyContent: "center", alignItems: "center"
+                });
+
+                const dialog = document.createElement("div");
+                Object.assign(dialog.style, {
+                    backgroundColor: "#2a2a2a", padding: "20px", borderRadius: "10px",
+                    border: "1px solid #444", width: "320px", display: "flex", flexDirection: "column", gap: "12px",
+                    boxShadow: "0 10px 30px rgba(0,0,0,0.5)"
+                });
+
+                const title = document.createElement("h4");
+                title.textContent = t("addField");
+                Object.assign(title.style, { margin: "0 0 5px 0", color: "white" });
+                dialog.appendChild(title);
+
+                // Inputs
+                const keyInputDiv = document.createElement("div");
+                const keyLabel = document.createElement("label");
+                keyLabel.textContent = t("enterNewValue");
+                keyLabel.style.display = "block";
+                keyLabel.style.color = "#aaa";
+                keyLabel.style.fontSize = "12px";
+                keyLabel.style.marginBottom = "4px";
+                const keyInput = document.createElement("input");
+                keyInput.type = "text"; // allow minus directly
+                Object.assign(keyInput.style, { width: "100%", padding: "8px", backgroundColor: "#111", border: "1px solid #555", color: "white", borderRadius: "4px" });
+                keyInputDiv.appendChild(keyLabel);
+                keyInputDiv.appendChild(keyInput);
+
+                const valInputDiv = document.createElement("div");
+                const valLabel = document.createElement("label");
+                valLabel.textContent = t("promptLabel") || "Prompt:";
+                valLabel.style.display = "block";
+                valLabel.style.color = "#aaa";
+                valLabel.style.fontSize = "12px";
+                valLabel.style.marginBottom = "4px";
+                const valInput = document.createElement("input");
+                valInput.type = "text";
+                Object.assign(valInput.style, { width: "100%", padding: "8px", backgroundColor: "#111", border: "1px solid #555", color: "white", borderRadius: "4px" });
+                valInputDiv.appendChild(valLabel);
+                valInputDiv.appendChild(valInput);
+
+                dialog.appendChild(keyInputDiv);
+                dialog.appendChild(valInputDiv);
+
+                // Buttons
+                const btnRow = document.createElement("div");
+                Object.assign(btnRow.style, { display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "10px" });
+
+                const cancelBtn = document.createElement("button");
+                cancelBtn.textContent = t("cancel");
+                Object.assign(cancelBtn.style, { padding: "6px 12px", backgroundColor: "#444", border: "none", borderRadius: "4px", color: "white", cursor: "pointer" });
+                cancelBtn.onclick = () => overlay.remove();
+
+                const confirmBtn = document.createElement("button");
+                confirmBtn.textContent = t("confirm");
+                Object.assign(confirmBtn.style, { padding: "6px 12px", backgroundColor: "#44aa44", border: "none", borderRadius: "4px", color: "white", cursor: "pointer" });
+                confirmBtn.onclick = () => {
+                    const k = keyInput.value.trim();
+                    const v = valInput.value.trim();
+                    if (k === "" || isNaN(Number(k))) {
+                        alert("Please enter a valid number.");
+                        return;
+                    }
+                    onConfirm(Number(k), v);
+                    overlay.remove();
+                };
+
+                btnRow.appendChild(cancelBtn);
+                btnRow.appendChild(confirmBtn);
+                dialog.appendChild(btnRow);
+                overlay.appendChild(dialog);
+                document.body.appendChild(overlay);
+
+                keyInput.focus();
+            };
+
+            // Custom Confirm Modal
+            const showCustomConfirm = (message, onConfirm) => {
+                const overlay = document.createElement("div");
+                Object.assign(overlay.style, {
+                    position: "fixed", top: "0", left: "0", width: "100%", height: "100%",
+                    backgroundColor: "rgba(0,0,0,0.6)", zIndex: "32000",
+                    display: "flex", justifyContent: "center", alignItems: "center"
+                });
+                const dialog = document.createElement("div");
+                Object.assign(dialog.style, {
+                    backgroundColor: "#2a2a2a", padding: "20px", borderRadius: "8px", border: "1px solid #444",
+                    maxWidth: "350px", textAlign: "center", boxShadow: "0 10px 30px rgba(0,0,0,0.5)"
+                });
+                const msg = document.createElement("p");
+                msg.textContent = message;
+                msg.style.color = "#ddd";
+                msg.style.marginBottom = "20px";
+                msg.style.fontSize = "16px";
+
+                const actions = document.createElement("div");
+                actions.style.display = "flex";
+                actions.style.justifyContent = "center";
+                actions.style.gap = "15px";
+
+                const noBtn = document.createElement("button");
+                noBtn.textContent = t("cancel");
+                Object.assign(noBtn.style, { padding: "8px 16px", backgroundColor: "#444", border: "none", borderRadius: "4px", color: "white", cursor: "pointer" });
+                noBtn.onclick = () => overlay.remove();
+
+                const yesBtn = document.createElement("button");
+                yesBtn.textContent = t("confirm");
+                Object.assign(yesBtn.style, { padding: "8px 16px", backgroundColor: "#aa4444", border: "none", borderRadius: "4px", color: "white", cursor: "pointer", fontWeight: "bold" });
+                yesBtn.onclick = () => {
+                    onConfirm();
+                    overlay.remove();
+                };
+
+                actions.appendChild(noBtn);
+                actions.appendChild(yesBtn);
+                dialog.appendChild(msg);
+                dialog.appendChild(actions);
+                overlay.appendChild(dialog);
+                document.body.appendChild(overlay);
+            };
+
+            // Custom Alert Modal
+            const showCustomAlert = (message) => {
+                const overlay = document.createElement("div");
+                Object.assign(overlay.style, {
+                    position: "fixed", top: "0", left: "0", width: "100%", height: "100%",
+                    backgroundColor: "rgba(0,0,0,0.6)", zIndex: "33000",
+                    display: "flex", justifyContent: "center", alignItems: "center"
+                });
+                const dialog = document.createElement("div");
+                Object.assign(dialog.style, {
+                    backgroundColor: "#2a2a2a", padding: "20px", borderRadius: "8px", border: "1px solid #444",
+                    maxWidth: "350px", textAlign: "center", boxShadow: "0 10px 30px rgba(0,0,0,0.5)"
+                });
+                const msg = document.createElement("p");
+                msg.textContent = message;
+                msg.style.color = "#ddd";
+                msg.style.marginBottom = "20px";
+                msg.style.fontSize = "16px";
+
+                const okBtn = document.createElement("button");
+                okBtn.textContent = t("confirm") || "OK"; // Reuse confirm text or use OK
+                Object.assign(okBtn.style, { padding: "8px 20px", backgroundColor: "#44aa44", border: "none", borderRadius: "4px", color: "white", cursor: "pointer" });
+                okBtn.onclick = () => overlay.remove();
+
+                dialog.appendChild(msg);
+                dialog.appendChild(okBtn);
+                overlay.appendChild(dialog);
+                document.body.appendChild(overlay);
+            };
+
+            const renderEditor = () => {
+                // Populate Select
+                presetSelect.innerHTML = "";
+                // Add default
+                const defOption = document.createElement("option");
+                defOption.value = 'default';
+                defOption.textContent = t("defaultPreset");
+                presetSelect.appendChild(defOption);
+
+                // Add others
+                Object.keys(PresetManager.presets).forEach(id => {
+                    if (id === 'default') return;
+                    const option = document.createElement("option");
+                    option.value = id;
+                    option.textContent = PresetManager.presets[id].name;
+                    presetSelect.appendChild(option);
+                });
+                presetSelect.value = activePresetId;
+
+                // Load Data - REMOVED (moved to loadActiveData)
+                if (!activeData) loadActiveData();
+                nameInput.value = activeData.name;
+
+                // Render Tables
+                sectionsContainer.innerHTML = "";
+
+                // 1. Azimuth
+                createSection(t("azimuthSettings"), activeData.azimuth, (k, v) => activeData.azimuth[k] = v);
+                // 2. Elevation
+                createSection(t("elevationSettings"), activeData.elevation, (k, v) => activeData.elevation[k] = v);
+                // 3. Zoom
+                createSection(t("zoomSettings"), activeData.zoom, (k, v) => activeData.zoom[k] = v);
+            };
+
+            const createSection = (title, dataMap, onChange) => {
+                const section = document.createElement("div");
+                Object.assign(section.style, {
+                    marginBottom: "20px", backgroundColor: "#222", padding: "15px", borderRadius: "8px", border: "1px solid #333"
+                });
+
+                const header = document.createElement("div");
+                Object.assign(header.style, {
+                    display: "flex", justifyContent: "space-between", alignItems: "center",
+                    margin: "0 0 15px 0", borderBottom: "1px solid #444", paddingBottom: "8px"
+                });
+
+                const h4 = document.createElement("h4");
+                h4.textContent = title;
+                Object.assign(h4.style, { margin: "0", color: "#ccc" });
+
+                // Add Button
+                const addBtn = document.createElement("button");
+                addBtn.textContent = "+";
+                Object.assign(addBtn.style, {
+                    padding: "2px 8px", backgroundColor: "#333", border: "1px solid #555", borderRadius: "4px", color: "#ddd", cursor: "pointer", fontSize: "14px"
+                });
+                addBtn.title = t("addField");
+                addBtn.onclick = () => {
+                    showAddKeyModal(title, (numKey, val) => {
+                        if (!isNaN(numKey)) {
+                            if (dataMap.hasOwnProperty(numKey)) {
+                                alert("Value already exists.");
+                            } else {
+                                dataMap[numKey] = val;
+                                renderEditor();
+                            }
+                        } else {
+                            alert("Invalid number.");
+                        }
+                    });
+                };
+
+                header.appendChild(h4);
+                header.appendChild(addBtn);
+                section.appendChild(header);
+
+                const grid = document.createElement("div");
+                Object.assign(grid.style, {
+                    display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "10px"
+                });
+
+                // Sort keys numerically to display in order
+                const sortedKeys = Object.keys(dataMap).sort((a, b) => Number(a) - Number(b));
+
+                sortedKeys.forEach(key => {
+                    const row = document.createElement("div");
+                    Object.assign(row.style, { display: "flex", alignItems: "center", gap: "10px" });
+
+                    const label = document.createElement("div");
+
+                    // Format Label roughly
+                    let labelText = key;
+                    if (title.includes("Azimuth") || title.includes("水平")) labelText += "°";
+                    else if (title.includes("Elevation") || title.includes("垂直")) labelText += "°";
+
+                    label.textContent = labelText;
+                    Object.assign(label.style, { width: "50px", color: "#888", fontSize: "12px", textAlign: "right" });
+
+                    const input = document.createElement("input");
+                    input.value = dataMap[key];
+                    Object.assign(input.style, {
+                        flex: "1", padding: "6px", backgroundColor: "#111", border: "1px solid #444", color: "#44ccff", borderRadius: "4px"
+                    });
+                    input.onchange = (e) => onChange(key, e.target.value);
+
+                    // Delete Button
+                    const deleteBtn = document.createElement("button");
+                    deleteBtn.textContent = "✕";
+                    Object.assign(deleteBtn.style, {
+                        padding: "4px 6px", backgroundColor: "transparent", border: "none", color: "#666", cursor: "pointer", fontSize: "12px", marginLeft: "5px"
+                    });
+                    deleteBtn.onmouseenter = () => deleteBtn.style.color = "#cc4444";
+                    deleteBtn.onmouseleave = () => deleteBtn.style.color = "#666";
+                    deleteBtn.title = t("deleteField");
+                    deleteBtn.onclick = () => {
+                        // Use custom confirm modal logic (reuse showAddKeyModal structure or make a new simple one?)
+                        // For simplicity, let's reuse a simple custom confirm approach
+                        const confirmOverlay = document.createElement("div");
+                        Object.assign(confirmOverlay.style, {
+                            position: "fixed", top: "0", left: "0", width: "100%", height: "100%",
+                            backgroundColor: "rgba(0,0,0,0.6)", zIndex: "32000",
+                            display: "flex", justifyContent: "center", alignItems: "center"
+                        });
+                        const confirmDialog = document.createElement("div");
+                        Object.assign(confirmDialog.style, {
+                            backgroundColor: "#2a2a2a", padding: "20px", borderRadius: "8px", border: "1px solid #444",
+                            maxWidth: "300px", textAlign: "center", boxShadow: "0 10px 30px rgba(0,0,0,0.5)"
+                        });
+                        const msg = document.createElement("p");
+                        msg.textContent = t("confirmDeleteField") + ` ${labelText}?`;
+                        msg.style.color = "#ddd";
+                        msg.style.marginBottom = "15px";
+
+                        const actions = document.createElement("div");
+                        actions.style.display = "flex";
+                        actions.style.justifyContent = "center";
+                        actions.style.gap = "10px";
+
+                        const noBtn = document.createElement("button");
+                        noBtn.textContent = t("cancel");
+                        Object.assign(noBtn.style, { padding: "6px 12px", backgroundColor: "#444", border: "none", borderRadius: "4px", color: "white", cursor: "pointer" });
+                        noBtn.onclick = () => confirmOverlay.remove();
+
+                        const yesBtn = document.createElement("button");
+                        yesBtn.textContent = t("confirm");
+                        Object.assign(yesBtn.style, { padding: "6px 12px", backgroundColor: "#aa4444", border: "none", borderRadius: "4px", color: "white", cursor: "pointer" });
+                        yesBtn.onclick = () => {
+                            delete dataMap[key];
+                            renderEditor();
+                            confirmOverlay.remove();
+                        };
+
+                        actions.appendChild(noBtn);
+                        actions.appendChild(yesBtn);
+                        confirmDialog.appendChild(msg);
+                        confirmDialog.appendChild(actions);
+                        confirmOverlay.appendChild(confirmDialog);
+                        document.body.appendChild(confirmOverlay);
+                    };
+
+                    row.appendChild(label);
+                    row.appendChild(input);
+                    row.appendChild(deleteBtn);
+                    grid.appendChild(row);
+                });
+                section.appendChild(grid);
+                sectionsContainer.appendChild(section);
+            };
+
+            presetSelect.onchange = () => {
+                activePresetId = presetSelect.value;
+                loadActiveData();
+                renderEditor();
+            };
+
+            nameInput.onchange = () => {
+                activeData.name = nameInput.value;
+            };
+
+            saveBtn.onclick = async () => {
+                let saveId = activePresetId;
+                if (saveId === 'default') {
+                    // Create new if saving default
+                    saveId = 'preset_' + Date.now();
+                    activePresetId = saveId;
+                }
+
+                const success = await PresetManager.savePreset(saveId, activeData);
+                if (success) {
+                    showCustomAlert(t("presetSaved"));
+                    // Reload but keep selection
+                    renderEditor();
+                    // Refresh current settings in manager
+                    PresetManager.currentPresetId = saveId;
+                }
+            };
+
+            deleteBtn.onclick = async () => {
+                if (activePresetId === 'default') {
+                    showCustomAlert("Cannot delete default preset.");
+                    return;
+                }
+                showCustomConfirm(t("confirmDeletePreset") + ` "${activeData.name}"?`, async () => {
+                    const success = await PresetManager.deletePreset(activePresetId);
+                    if (success) {
+                        showCustomAlert(t("presetDeleted"));
+                        activePresetId = 'default';
+                        loadActiveData(); // Load default
+                        renderEditor();   // Render default
+                    }
+                });
+            };
         };
 
         const createModal = () => {
@@ -243,6 +924,25 @@ app.registerExtension({
                 gap: "12px",
                 marginRight: "40px"
             });
+
+            // Camera Presets Button
+            const presetsBtn = document.createElement("button");
+            presetsBtn.textContent = t("presets");
+            presetsBtn.dataset.i18n = "presets";
+            Object.assign(presetsBtn.style, {
+                padding: "4px 10px",
+                backgroundColor: "#333",
+                border: "1px solid #555",
+                borderRadius: "4px",
+                color: "#ddd",
+                fontSize: "12px",
+                cursor: "pointer"
+            });
+            presetsBtn.onmouseenter = () => presetsBtn.style.backgroundColor = "#444";
+            presetsBtn.onmouseleave = () => presetsBtn.style.backgroundColor = "#333";
+            presetsBtn.onclick = openPresetEditor;
+
+            headerButtonsContainer.appendChild(presetsBtn);
 
             headerDiv.appendChild(titleContainer);
             headerDiv.appendChild(headerButtonsContainer);
@@ -556,6 +1256,82 @@ app.registerExtension({
                 modalHeader.appendChild(modalTitle);
                 modalHeader.appendChild(closeModalBtn);
 
+                // Initialize Preset Selection
+                let selectedPresetId = savedSettings.presetId || PresetManager.currentPresetId;
+
+                // Preset Selector Bar
+                const presetBar = document.createElement("div");
+                Object.assign(presetBar.style, {
+                    display: "flex", alignItems: "center", gap: "10px", marginBottom: "12px",
+                    backgroundColor: "#222", padding: "8px 12px", borderRadius: "6px"
+                });
+
+                const presetLabel = document.createElement("label");
+                presetLabel.textContent = t("selectPreset");
+                Object.assign(presetLabel.style, { color: "#aaa", fontSize: "12px" });
+
+                const presetSelect = document.createElement("select");
+                Object.assign(presetSelect.style, {
+                    flex: "1", padding: "6px", backgroundColor: "#111", border: "1px solid #444", color: "white", borderRadius: "4px"
+                });
+
+                // Populate presets
+                // Default
+                const defOption = document.createElement("option");
+                defOption.value = 'default';
+                defOption.textContent = t("defaultPreset");
+                presetSelect.appendChild(defOption);
+
+                Object.keys(PresetManager.presets).forEach(id => {
+                    if (id === 'default') return;
+                    const option = document.createElement("option");
+                    option.value = id;
+                    option.textContent = PresetManager.presets[id].name;
+                    presetSelect.appendChild(option);
+                });
+                presetSelect.value = selectedPresetId;
+
+                // Helper to update limits based on preset
+                function applyPresetLimits(pid) {
+                    const pData = PresetManager.getPreset(pid);
+                    if (!pData || !iframe.contentWindow || !iframe.contentWindow.threeScene || !iframe.contentWindow.threeScene.updateLimits) return;
+
+                    // Elevation
+                    const elKeys = Object.keys(pData.elevation).map(Number);
+                    if (elKeys.length > 0) {
+                        const minEl = Math.min(...elKeys);
+                        const maxEl = Math.max(...elKeys);
+                        iframe.contentWindow.threeScene.updateLimits(minEl, maxEl);
+                    }
+                }
+
+                presetSelect.onchange = () => {
+                    selectedPresetId = presetSelect.value;
+                    // Trigger update via checking current settings
+                    // We need to re-calculate prompt based on current angles and new preset
+                    const p = PresetManager.getPrompt(currentSettings.horizontal, currentSettings.vertical, currentSettings.zoom, selectedPresetId);
+                    currentPrompt = p;
+                    promptPreviewText.textContent = currentPrompt;
+                    // Send to iframe
+                    if (iframe.contentWindow) {
+                        iframe.contentWindow.postMessage({
+                            type: 'SET_PROMPT_PREVIEW',
+                            prompt: currentPrompt
+                        }, '*');
+                    }
+                    applyPresetLimits(selectedPresetId);
+                };
+
+                presetBar.appendChild(presetLabel);
+                presetBar.appendChild(presetSelect);
+
+                // Add preset bar to modal before viewer
+                // Note: We need to ensure modalContent is available in scope. It is created above.
+                // But we are replacing lines where modalContent is already added to.
+                // The replacement block ends at modalHeader appendChild. 
+                // We need to append presetBar to modalContent. 
+                modalContent.appendChild(presetBar);
+
                 // 3D Viewer Container (iframe)
                 const viewerContainer = document.createElement("div");
                 Object.assign(viewerContainer.style, {
@@ -629,6 +1405,7 @@ app.registerExtension({
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script>
         let state = { azimuth: 0, elevation: 0, distance: 5 };
+        let limits = { minElevation: -30, maxElevation: 90 }; // Dynamic limits
         let threeScene = null;
         const container = document.getElementById('threejs-container');
         const hValueEl = document.getElementById('h-value');
@@ -669,7 +1446,7 @@ app.registerExtension({
             hValueEl.textContent = Math.round(state.azimuth) + '°';
             vValueEl.textContent = Math.round(state.elevation) + '°';
             zValueEl.textContent = state.distance.toFixed(1);
-            promptPreviewEl.textContent = generatePromptPreview();
+            // promptPreviewEl.textContent = generatePromptPreview();
         }
 
         function sendAngleUpdate() {
@@ -758,20 +1535,26 @@ app.registerExtension({
             scene.add(azimuthHandle);
 
             // Elevation arc
-            const arcPoints = [];
-            for (let i = 0; i <= 32; i++) {
-                const angle = (-30 + (120 * i / 32)) * Math.PI / 180;
-                arcPoints.push(new THREE.Vector3(
-                    ELEV_ARC_X,
-                    ELEVATION_RADIUS * Math.sin(angle) + CENTER.y,
-                    ELEVATION_RADIUS * Math.cos(angle)
-                ));
+            let elevationArc = null;
+            function rebuildElevationArc() {
+                if (elevationArc) scene.remove(elevationArc);
+                const arcPoints = [];
+                const range = limits.maxElevation - limits.minElevation;
+                for (let i = 0; i <= 32; i++) {
+                    const angle = (limits.minElevation + (range * i / 32)) * Math.PI / 180;
+                    arcPoints.push(new THREE.Vector3(
+                        ELEV_ARC_X,
+                        ELEVATION_RADIUS * Math.sin(angle) + CENTER.y,
+                        ELEVATION_RADIUS * Math.cos(angle)
+                    ));
+                }
+                const arcCurve = new THREE.CatmullRomCurve3(arcPoints);
+                const elArcGeo = new THREE.TubeGeometry(arcCurve, 32, 0.04, 8, false);
+                const elArcMat = new THREE.MeshBasicMaterial({ color: 0x00FFD0, transparent: true, opacity: 0.8 });
+                elevationArc = new THREE.Mesh(elArcGeo, elArcMat);
+                scene.add(elevationArc);
             }
-            const arcCurve = new THREE.CatmullRomCurve3(arcPoints);
-            const elArcGeo = new THREE.TubeGeometry(arcCurve, 32, 0.04, 8, false);
-            const elArcMat = new THREE.MeshBasicMaterial({ color: 0x00FFD0, transparent: true, opacity: 0.8 });
-            const elevationArc = new THREE.Mesh(elArcGeo, elArcMat);
-            scene.add(elevationArc);
+            rebuildElevationArc();
 
             // Elevation handle
             const elHandleGeo = new THREE.SphereGeometry(0.16, 32, 32);
@@ -899,7 +1682,7 @@ app.registerExtension({
                         const relY = intersect.y - CENTER.y;
                         const relZ = intersect.z;
                         let angle = Math.atan2(relY, relZ) * (180 / Math.PI);
-                        angle = Math.max(-30, Math.min(90, angle));
+                        angle = Math.max(limits.minElevation, Math.min(limits.maxElevation, angle));
                         liveElevation = angle;
                         state.elevation = Math.round(liveElevation);
                         updateDisplay();
@@ -982,7 +1765,7 @@ app.registerExtension({
                         planeMat.color.set(0xffffff);
                         planeMat.needsUpdate = true;
                         const ar = img.width / img.height;
-                        const maxSize = 1.5;
+                        const maxSize = 1.6; // Slightly larger
                         let scaleX, scaleY;
                         if (ar > 1) { scaleX = maxSize; scaleY = maxSize / ar; }
                         else { scaleY = maxSize; scaleX = maxSize * ar; }
@@ -990,6 +1773,17 @@ app.registerExtension({
                         imageFrame.scale.set(scaleX, scaleY, 1);
                     };
                     img.src = url;
+                },
+                updateLimits: (minEl, maxEl) => {
+                    limits.minElevation = minEl;
+                    limits.maxElevation = maxEl;
+                    rebuildElevationArc();
+                    // Clamp current state
+                    if (state.elevation < minEl) state.elevation = minEl;
+                    if (state.elevation > maxEl) state.elevation = maxEl;
+                    liveElevation = state.elevation;
+                    updateVisuals();
+                    updateDisplay();
                 }
             };
         }
@@ -1000,6 +1794,14 @@ app.registerExtension({
             if (data.type === 'SET_ZOOM') {
                 if (window.threeScene && window.threeScene.setZoom) {
                     window.threeScene.setZoom(data.zoom);
+                }
+            } else if (data.type === 'SET_HORIZONTAL') {
+                if (window.threeScene && window.threeScene.setHorizontal) {
+                    window.threeScene.setHorizontal(data.angle);
+                }
+            } else if (data.type === 'SET_VERTICAL') {
+                if (window.threeScene && window.threeScene.setVertical) {
+                    window.threeScene.setVertical(data.angle);
                 }
             } else if (data.type === 'UPDATE_IMAGE') {
                 if (window.threeScene && window.threeScene.updateImage) {
@@ -1016,6 +1818,8 @@ app.registerExtension({
                 }
                 updateDisplay();
                 sendAngleUpdate();
+            } else if (data.type === 'SET_PROMPT_PREVIEW') {
+                promptPreviewEl.textContent = data.prompt;
             }
         });
 
@@ -1207,6 +2011,70 @@ app.registerExtension({
                 sliderRow.appendChild(zoomDescription);
                 sliderContainer.appendChild(sliderRow);
 
+                // Horizontal Slider
+                const hSliderRow = document.createElement("div");
+                Object.assign(hSliderRow.style, { display: "flex", alignItems: "center", gap: "12px", marginTop: "8px" });
+
+                const hLabel = document.createElement("label");
+                hLabel.textContent = t("azimuth");
+                Object.assign(hLabel.style, { color: "#44ccff", fontSize: "12px", fontWeight: "bold", minWidth: "70px" });
+
+                const hSlider = document.createElement("input");
+                hSlider.type = "range";
+                hSlider.min = "0";
+                hSlider.max = "360";
+                hSlider.value = String(savedSettings.horizontal || 0);
+                Object.assign(hSlider.style, { flex: "1", accentColor: "#44ccff", cursor: "pointer" });
+
+                const hValueDisplay = document.createElement("span");
+                hValueDisplay.textContent = (savedSettings.horizontal || 0) + '°';
+                Object.assign(hValueDisplay.style, { color: "#44ccff", fontSize: "12px", fontWeight: "bold", minWidth: "30px", textAlign: "right" });
+
+                hSlider.oninput = () => {
+                    const val = parseInt(hSlider.value);
+                    hValueDisplay.textContent = val + '°';
+                    if (iframe.contentWindow) {
+                        iframe.contentWindow.postMessage({ type: 'SET_HORIZONTAL', angle: val }, '*');
+                    }
+                };
+
+                hSliderRow.appendChild(hLabel);
+                hSliderRow.appendChild(hSlider);
+                hSliderRow.appendChild(hValueDisplay);
+                sliderContainer.appendChild(hSliderRow);
+
+                // Vertical Slider
+                const vSliderRow = document.createElement("div");
+                Object.assign(vSliderRow.style, { display: "flex", alignItems: "center", gap: "12px", marginTop: "8px" });
+
+                const vLabel = document.createElement("label");
+                vLabel.textContent = t("elevation");
+                Object.assign(vLabel.style, { color: "#00FFD0", fontSize: "12px", fontWeight: "bold", minWidth: "70px" });
+
+                const vSlider = document.createElement("input");
+                vSlider.type = "range";
+                vSlider.min = "-90";
+                vSlider.max = "90";
+                vSlider.value = String(savedSettings.vertical || 0);
+                Object.assign(vSlider.style, { flex: "1", accentColor: "#00FFD0", cursor: "pointer" });
+
+                const vValueDisplay = document.createElement("span");
+                vValueDisplay.textContent = (savedSettings.vertical || 0) + '°';
+                Object.assign(vValueDisplay.style, { color: "#00FFD0", fontSize: "12px", fontWeight: "bold", minWidth: "30px", textAlign: "right" });
+
+                vSlider.oninput = () => {
+                    const val = parseInt(vSlider.value);
+                    vValueDisplay.textContent = val + '°';
+                    if (iframe.contentWindow) {
+                        iframe.contentWindow.postMessage({ type: 'SET_VERTICAL', angle: val }, '*');
+                    }
+                };
+
+                vSliderRow.appendChild(vLabel);
+                vSliderRow.appendChild(vSlider);
+                vSliderRow.appendChild(vValueDisplay);
+                sliderContainer.appendChild(vSliderRow);
+
                 // Prompt preview area
                 let currentPrompt = "front view, eye level, medium shot";
 
@@ -1245,8 +2113,18 @@ app.registerExtension({
                     if (event.source !== iframe.contentWindow) return;
                     const data = event.data;
                     if (data.type === 'CAMERA_ANGLE_UPDATE') {
-                        currentPrompt = data.prompt;
+                        // Use PresetManager to get prompt
+                        currentPrompt = PresetManager.getPrompt(data.horizontal, data.vertical, data.zoom, selectedPresetId);
                         promptPreviewText.textContent = currentPrompt;
+
+                        // Send back to iframe to update text
+                        if (iframe.contentWindow) {
+                            iframe.contentWindow.postMessage({
+                                type: 'SET_PROMPT_PREVIEW',
+                                prompt: currentPrompt
+                            }, '*');
+                        }
+
                         // Update current settings for saving
                         if (data.horizontal !== undefined) currentSettings.horizontal = data.horizontal;
                         if (data.vertical !== undefined) currentSettings.vertical = data.vertical;
@@ -1257,8 +2135,18 @@ app.registerExtension({
                             zoomValueDisplay.textContent = data.zoom.toFixed(1);
                             zoomDescription.textContent = getZoomDescription(data.zoom);
                         }
+                        if (data.horizontal !== undefined) {
+                            hSlider.value = Math.round(data.horizontal);
+                            hValueDisplay.textContent = Math.round(data.horizontal) + '°';
+                        }
+                        if (data.vertical !== undefined) {
+                            vSlider.value = Math.round(data.vertical);
+                            vValueDisplay.textContent = Math.round(data.vertical) + '°';
+                        }
                     } else if (data.type === 'VIEWER_READY') {
                         iframeReady = true;
+                        // Apply limits when viewer is ready
+                        applyPresetLimits(selectedPresetId);
                         // Send initial camera settings
                         iframe.contentWindow.postMessage({
                             type: 'INIT_SETTINGS',
@@ -1266,6 +2154,16 @@ app.registerExtension({
                             vertical: savedSettings.vertical,
                             zoom: savedSettings.zoom
                         }, '*');
+
+                        // Also send initial prompt based on loaded settings
+                        const p = PresetManager.getPrompt(savedSettings.horizontal, savedSettings.vertical, savedSettings.zoom, selectedPresetId);
+                        currentPrompt = p;
+                        promptPreviewText.textContent = currentPrompt;
+                        iframe.contentWindow.postMessage({
+                            type: 'SET_PROMPT_PREVIEW',
+                            prompt: currentPrompt
+                        }, '*');
+
                         // Send pending image if any
                         if (pendingImageUrl) {
                             sendImageToViewer(pendingImageUrl);
@@ -1318,7 +2216,7 @@ app.registerExtension({
                 confirmBtn.onmouseleave = () => confirmBtn.style.backgroundColor = "#44aa44";
                 confirmBtn.onclick = () => {
                     // Save camera settings to shotData
-                    shotData.cameraSettings = { ...currentSettings };
+                    shotData.cameraSettings = { ...currentSettings, presetId: selectedPresetId };
                     // Append prompt to textarea
                     const existingText = promptInput.value.trim();
                     if (existingText) {
