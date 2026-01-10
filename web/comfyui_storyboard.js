@@ -1400,7 +1400,9 @@ app.registerExtension({
                 });
 
                 // Run button
+                // Run button
                 const runBtn = document.createElement("button");
+                runBtn.classList.add("storyboard-run-btn");
                 runBtn.textContent = t("run"); // Initial text
                 runBtn.dataset.i18n = "run"; // Key for translation
                 Object.assign(runBtn.style, {
@@ -1413,9 +1415,53 @@ app.registerExtension({
                     cursor: "pointer",
                     fontWeight: "bold"
                 });
-                runBtn.onmouseenter = () => runBtn.style.backgroundColor = "#55bb55";
-                runBtn.onmouseleave = () => runBtn.style.backgroundColor = "#44aa44";
+                runBtn.onmouseenter = () => {
+                    if (!card.shotData.isRunning) runBtn.style.backgroundColor = "#55bb55";
+                    else runBtn.style.backgroundColor = "#cc5555";
+                };
+                runBtn.onmouseleave = () => {
+                    if (!card.shotData.isRunning) runBtn.style.backgroundColor = "#44aa44";
+                    else runBtn.style.backgroundColor = "#aa4444";
+                };
+
+                const resetRunBtn = () => {
+                    runBtn.textContent = t("run");
+                    runBtn.dataset.i18n = "run";
+                    runBtn.style.backgroundColor = "#44aa44";
+                    runBtn.disabled = false;
+                    card.shotData.isRunning = false;
+                    card.shotData.pollInterval = null;
+                };
+
                 runBtn.onclick = async () => {
+                    // Check if already running - if so, this is a Cancel action
+                    if (card.shotData.isRunning) {
+                        // Cancel logic
+                        if (card.shotData.pollInterval) {
+                            clearInterval(card.shotData.pollInterval);
+                        }
+
+                        try {
+                            // Try to interrupt backend
+                            await api.fetchApi("/interrupt", { method: "POST" });
+                        } catch (e) {
+                            console.error("Failed to interrupt:", e);
+                        }
+
+                        // Remove loading animation
+                        const loadingAnim = card.shotData.resultArea.querySelector(".loading-animation");
+                        if (loadingAnim) loadingAnim.remove();
+
+                        // Show placeholder again if no image
+                        if (!card.shotData.lastImageUrl) {
+                            card.shotData.placeholder.style.display = "";
+                        }
+
+                        resetRunBtn();
+                        return;
+                    }
+
+                    // Start Run Logic
                     // Validate node IDs
                     const promptNodeId = promptNodeInput.value.trim();
                     const saveNodeId = saveNodeInput.value.trim();
@@ -1426,10 +1472,12 @@ app.registerExtension({
                         return;
                     }
 
-                    runBtn.disabled = true;
-                    runBtn.removeAttribute("data-i18n"); // Remove i18n while running to prevent overwrite
-                    runBtn.textContent = t("running");
-                    runBtn.style.backgroundColor = "#888";
+                    // Set state to running
+                    card.shotData.isRunning = true;
+                    // Change button to Cancel
+                    runBtn.removeAttribute("data-i18n");
+                    runBtn.textContent = t("cancel");
+                    runBtn.style.backgroundColor = "#aa4444";
 
                     try {
                         // Increment generation counter for file naming
@@ -1484,8 +1532,8 @@ app.registerExtension({
                             const result = await res.json();
                             const promptId = result.prompt_id;
 
-                            runBtn.textContent = t("generating");
-                            runBtn.style.backgroundColor = "#cc8844";
+                            // Update button text to indicate generating but still cancellable
+                            // runBtn.textContent = t("cancel"); // Keep as cancel
 
                             // Show loading animation in result area
                             const resultArea = card.shotData.resultArea;
@@ -1573,11 +1621,17 @@ app.registerExtension({
                             // Poll every 500ms for up to 120 seconds
                             let attempts = 0;
                             const maxAttempts = 240;
-                            const pollInterval = setInterval(async () => {
+                            card.shotData.pollInterval = setInterval(async () => {
+                                if (!card.shotData.isRunning) {
+                                    clearInterval(card.shotData.pollInterval);
+                                    return;
+                                }
                                 attempts++;
                                 const done = await checkExecution();
                                 if (done || attempts >= maxAttempts) {
-                                    clearInterval(pollInterval);
+                                    clearInterval(card.shotData.pollInterval);
+                                    card.shotData.pollInterval = null;
+
                                     // Remove loading animation
                                     const loadingAnim = card.shotData.resultArea.querySelector(".loading-animation");
                                     if (loadingAnim) loadingAnim.remove();
@@ -1590,40 +1644,30 @@ app.registerExtension({
                                             card.shotData.placeholder.style.display = "";
                                         }
                                     }
+
+                                    // Reset running state
+                                    card.shotData.isRunning = false;
+
                                     // Re-enable button after completion
-                                    runBtn.disabled = false;
                                     setTimeout(() => {
-                                        runBtn.textContent = t("run");
-                                        runBtn.dataset.i18n = "run"; // Restore i18n
-                                        runBtn.style.backgroundColor = "#44aa44";
+                                        if (!card.shotData.isRunning) { // Double check
+                                            resetRunBtn();
+                                        }
                                     }, 1500);
                                 }
                             }, 500);
-
-                            return; // Don't reset button immediately
                         } else {
-                            const errorData = await res.json().catch(() => ({}));
-                            throw new Error(errorData.error || "Failed to queue");
+                            runBtn.textContent = t("failed");
+                            runBtn.style.backgroundColor = "#cc4444";
+                            card.shotData.isRunning = false;
+                            setTimeout(resetRunBtn, 2000);
                         }
                     } catch (e) {
-                        console.error("Run failed:", e);
+                        console.error("Run error:", e);
                         runBtn.textContent = t("failed");
                         runBtn.style.backgroundColor = "#cc4444";
-                        generateCount--; // Rollback counter on failure
-
-                        // Remove loading animation on error
-                        const loadingAnim = card.shotData.resultArea.querySelector(".loading-animation");
-                        if (loadingAnim) loadingAnim.remove();
-                        // Show placeholder if no image
-                        if (!card.shotData.lastImageUrl) {
-                            card.shotData.placeholder.style.display = "";
-                        }
-                        runBtn.disabled = false;
-                        setTimeout(() => {
-                            runBtn.textContent = t("run");
-                            runBtn.dataset.i18n = "run"; // Restore i18n
-                            runBtn.style.backgroundColor = "#44aa44";
-                        }, 2000);
+                        card.shotData.isRunning = false;
+                        setTimeout(resetRunBtn, 2000);
                     }
                 };
 
@@ -2008,9 +2052,24 @@ app.registerExtension({
                 fontWeight: "bold",
                 transition: "background-color 0.2s"
             });
-            runAllBtn.onmouseenter = () => runAllBtn.style.backgroundColor = "#55bb55";
-            runAllBtn.onmouseleave = () => runAllBtn.style.backgroundColor = "#44aa44";
+            runAllBtn.onmouseenter = () => {
+                if (!runAllBtn.dataset.isRunning) runAllBtn.style.backgroundColor = "#55bb55";
+                else runAllBtn.style.backgroundColor = "#cc5555";
+            };
+            runAllBtn.onmouseleave = () => {
+                if (!runAllBtn.dataset.isRunning) runAllBtn.style.backgroundColor = "#44aa44";
+                else runAllBtn.style.backgroundColor = "#aa4444";
+            };
+
             runAllBtn.onclick = async () => {
+                // Check if already running - if so, this is a Cancel action
+                if (runAllBtn.dataset.isRunning === 'true') {
+                    // Set cancellation flag
+                    runAllBtn.dataset.isCancelling = 'true';
+                    runAllBtn.textContent = t("cancel") + "...";
+                    return;
+                }
+
                 // Validate node IDs
                 const promptNodeId = promptNodeInput.value.trim();
                 const saveNodeId = saveNodeInput.value.trim();
@@ -2027,54 +2086,81 @@ app.registerExtension({
                     return;
                 }
 
-                runAllBtn.disabled = true;
+                // Start Run All
+                runAllBtn.dataset.isRunning = 'true';
+                runAllBtn.dataset.isCancelling = 'false';
                 runAllBtn.removeAttribute("data-i18n"); // Prevent overwrite while running
                 const originalText = runAllBtn.textContent;
                 let completedCount = 0;
 
                 // Run each card sequentially
                 for (const card of cards) {
+                    // Check for cancellation
+                    if (runAllBtn.dataset.isCancelling === 'true') {
+                        // If current card is running, it will be cancelled explicitly if we trigger cancel on it
+                        // But since we are in the loop, we just stop proceeding.
+                        // The 'await' below might need to be interrupted?
+                        // Actually, if we are waiting, we can't easily break the wait unless the wait checks the flag.
+                        break;
+                    }
+
                     if (!card.shotData) continue;
 
-                    runAllBtn.textContent = `${t("running")} (${completedCount + 1}/${cards.length})`;
-                    runAllBtn.style.backgroundColor = "#cc8844";
+                    runAllBtn.textContent = `${t("cancel")} (${completedCount + 1}/${cards.length})`;
+                    runAllBtn.style.backgroundColor = "#aa4444";
 
-                    // Find the run button in this card (look for button containing "运行")
-                    const buttons = card.querySelectorAll("button");
-                    const runBtn = Array.from(buttons).find(btn => btn.textContent.includes("运行"));
+                    // Find the run button in this card
+                    const runBtn = card.querySelector(".storyboard-run-btn");
 
-                    if (runBtn && !runBtn.disabled) {
-                        // Trigger the click
-                        runBtn.click();
+                    if (runBtn) {
+                        // If runBtn is already in 'Cancel' state (running), we skip or wait? 
+                        // Assume logical start from scratch or idle.
+                        // If it is NOT running, we click it to start.
+                        if (!card.shotData.isRunning) {
+                            runBtn.click();
+                        }
 
-                        // Wait a small moment for the click to process and disable the button
-                        await new Promise(r => setTimeout(r, 100));
-
-                        // Wait for this card to complete (poll for button state)
+                        // Wait for this card to complete
                         await new Promise(resolve => {
                             const checkComplete = setInterval(() => {
-                                if (!runBtn.disabled) {
+                                // If global cancellation requested
+                                if (runAllBtn.dataset.isCancelling === 'true') {
+                                    // Click run button again to cancel this specific card if it's running
+                                    if (card.shotData.isRunning) {
+                                        runBtn.click();
+                                    }
+                                    clearInterval(checkComplete);
+                                    resolve();
+                                    return;
+                                }
+
+                                if (!card.shotData.isRunning) {
                                     clearInterval(checkComplete);
                                     resolve();
                                 }
                             }, 500);
-                            // Timeout after 2 minutes per card
-                            setTimeout(() => {
-                                clearInterval(checkComplete);
-                                resolve();
-                            }, 120000);
                         });
                     }
                     completedCount++;
                 }
 
-                runAllBtn.textContent = `${t("done")} (${completedCount}/${cards.length})`;
-                runAllBtn.style.backgroundColor = "#44aa44";
-                runAllBtn.disabled = false;
+                // Reset UI
+                if (runAllBtn.dataset.isCancelling === 'true') {
+                    // Was cancelled
+                } else {
+                    runAllBtn.textContent = `${t("done")} (${completedCount}/${cards.length})`;
+                    runAllBtn.style.backgroundColor = "#44aa44";
+                }
+
+                runAllBtn.dataset.isRunning = 'false';
+                runAllBtn.dataset.isCancelling = 'false';
 
                 setTimeout(() => {
-                    runAllBtn.textContent = t("runAll");
-                    runAllBtn.dataset.i18n = "runAll"; // Restore
+                    if (runAllBtn.dataset.isRunning !== 'true') {
+                        runAllBtn.textContent = t("runAll");
+                        runAllBtn.dataset.i18n = "runAll"; // Restore
+                        runAllBtn.style.backgroundColor = "#44aa44";
+                    }
                 }, 2000);
             };
 
