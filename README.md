@@ -4,6 +4,11 @@
 
 **ComfyUI Storyboard** is a powerful custom node and interface extension for ComfyUI that enables efficient storyboard creation, management, and execution. It introduces a visual workflow for managing multiple "shots" (scenes) with individual prompts and camera settings, all integrated seamlessly into your existing ComfyUI workflows.
 
+After installation, open a window here.
+<img width="1926" height="834" alt="cc331" src="https://github.com/user-attachments/assets/e863a8e5-3801-4ded-8b1a-2038925ff7e9" />
+The prompt word is delivered using a text message.
+<img width="1821" height="846" alt="CC44" src="https://github.com/user-attachments/assets/5c9662ec-bef4-4f35-ad0d-9e7c509a09b0" />
+
 <img width="2757" height="1887" alt="cc22" src="https://github.com/user-attachments/assets/11ffc853-9f48-4db5-8861-00e3dcfe78cd" />
 <img width="2781" height="1899" alt="cc11" src="https://github.com/user-attachments/assets/e7dad75c-a272-4133-aec3-b3806e18860c" />
 
@@ -73,6 +78,11 @@ MIT License.
 # ComfyUI Storyboard (中文说明)
 
 **ComfyUI Storyboard** 是一个功能强大的 ComfyUI 自定义节点和界面扩展，旨在实现高效的故事板创建、管理和执行。它引入了一个可视化的工作流，用于管理具有独立提示词和相机设置的多个“分镜”（场景），并无缝集成到您现有的 ComfyUI 工作流中。
+
+安装完成，在这里打开
+<img width="1926" height="834" alt="cc331" src="https://github.com/user-attachments/assets/e863a8e5-3801-4ded-8b1a-2038925ff7e9" />
+提示词节点使用文本传递
+<img width="1821" height="846" alt="CC44" src="https://github.com/user-attachments/assets/5c9662ec-bef4-4f35-ad0d-9e7c509a09b0" />
 
 <img width="2757" height="1887" alt="cc22" src="https://github.com/user-attachments/assets/11ffc853-9f48-4db5-8861-00e3dcfe78cd" />
 <img width="2781" height="1899" alt="cc11" src="https://github.com/user-attachments/assets/e7dad75c-a272-4133-aec3-b3806e18860c" />
