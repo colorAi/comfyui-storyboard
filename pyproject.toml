@@ -1,0 +1,14 @@
+[project]
+name = "comfyui-storyboard"
+description = "A modern, powerful, and easy-to-use Storyboard extension for ComfyUI."
+version = "1.0.0"
+license = { file = "LICENSE" }
+dependencies = []
+
+[project.urls]
+Repository = "https://github.com/colorAi/comfyui-storyboard"
+
+[tool.comfy]
+PublisherId = "hootoo"
+DisplayName = "ComfyUI Storyboard"
+Icon = ""

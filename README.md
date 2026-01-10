@@ -70,7 +70,6 @@ MIT License.
 
 **ComfyUI Storyboard** 是一个功能强大的 ComfyUI 自定义节点和界面扩展，旨在实现高效的故事板创建、管理和执行。它引入了一个可视化的工作流，用于管理具有独立提示词和相机设置的多个“分镜”（场景），并无缝集成到您现有的 ComfyUI 工作流中。
 
-![Usage Preview](https://github.com/colorAi/comfyui-storyboard)
 <img width="2757" height="1887" alt="cc22" src="https://github.com/user-attachments/assets/11ffc853-9f48-4db5-8861-00e3dcfe78cd" />
 <img width="2781" height="1899" alt="cc11" src="https://github.com/user-attachments/assets/e7dad75c-a272-4133-aec3-b3806e18860c" />
 
