@@ -68,6 +68,7 @@ Click "📥 Add to Workflow" to output your generated storyboard shots as actual
 
 ## 🙏 Acknowledgements
 Special thanks to [jtydhr88](https://github.com/jtydhr88/ComfyUI-qwenmultiangle) for their project support!
+If you think it's good, you can give the author a star to support them.
 
 ## 📄 License
 
@@ -143,6 +144,7 @@ MIT License.
 
 ## 🙏 致谢
 感谢 [柯基大佬](https://github.com/jtydhr88/ComfyUI-qwenmultiangle) 的项目支持！
+如果你觉得不错，可以给作者点个星以示支持。
 
 ## 📄 许可证
 
