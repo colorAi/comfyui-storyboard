@@ -2405,9 +2405,67 @@ app.registerExtension({
 
             body.appendChild(defaultContent);
 
+            // Footer
+            const footerDiv = document.createElement("div");
+            Object.assign(footerDiv.style, {
+                marginTop: "8px",
+                paddingTop: "8px",
+                borderTop: "1px solid #333",
+                display: "flex",
+                justifyContent: "center",
+                alignItems: "center",
+                fontSize: "12px",
+                color: "#666",
+                gap: "10px",
+                flexWrap: "wrap"
+            });
+
+            const createLink = (text, url) => {
+                const a = document.createElement("a");
+                a.textContent = text;
+                a.href = url;
+                a.target = "_blank";
+                Object.assign(a.style, {
+                    color: "#888",
+                    textDecoration: "none",
+                    transition: "color 0.2s"
+                });
+                a.onmouseenter = () => a.style.color = "#ccc";
+                a.onmouseleave = () => a.style.color = "#888";
+                return a;
+            };
+
+            const authorText = document.createElement("span");
+            authorText.textContent = "作者: HooToo";
+
+            const bSiteLink = createLink("哔站", "https://space.bilibili.com/527601196?spm_id_from=333.1007.0.0");
+            const githubLink = createLink("Github", "https://github.com/colorAi");
+            const rhLink = createLink("RH邀请链接 送1000RH币", "https://www.runninghub.ai/?inviteCode=rh-v1123");
+
+            const qqGroupText = document.createElement("span");
+            qqGroupText.textContent = "QQ交流群: 543917943";
+
+            const separator = () => {
+                const s = document.createElement("span");
+                s.textContent = "|";
+                s.style.color = "#444";
+                return s;
+            };
+
+            footerDiv.appendChild(authorText);
+            footerDiv.appendChild(separator());
+            footerDiv.appendChild(bSiteLink);
+            footerDiv.appendChild(separator());
+            footerDiv.appendChild(githubLink);
+            footerDiv.appendChild(separator());
+            footerDiv.appendChild(rhLink);
+            footerDiv.appendChild(separator());
+            footerDiv.appendChild(qqGroupText);
+
             content.appendChild(closeBtn);
             content.appendChild(headerDiv);
             content.appendChild(body);
+            content.appendChild(footerDiv);
             modal.appendChild(content);
 
             return modal;
