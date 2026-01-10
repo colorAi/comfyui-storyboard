@@ -19,6 +19,10 @@
 
 ## 📦 Installation
 
+### Method 1: Via ComfyUI Manager
+Search for `comfyui storyboard` in ComfyUI Manager and install.
+
+### Method 2: Manual Installation
 1.  Navigate to your ComfyUI `custom_nodes` directory.
 2.  Clone this repository:
     ```bash
@@ -85,6 +89,10 @@ MIT License.
 
 ## 📦 安装
 
+### 方法 1：通过 ComfyUI Manager 安装
+在管理器中搜索 `comfyui storyboard` 进行安装。
+
+### 方法 2：手动安装
 1.  进入您的 ComfyUI `custom_nodes` 目录。
 2.  克隆此仓库：
     ```bash
