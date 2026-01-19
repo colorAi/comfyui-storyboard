@@ -26,6 +26,33 @@
                 "6": "medium close-up",
                 "8": "close-up"
             }
+        },
+        "preset_1768270429390": {
+            "name": "asd",
+            "azimuth": {
+                "0": "front view",
+                "45": "front-right view",
+                "90": "right side view",
+                "135": "back-right view",
+                "180": "back view",
+                "225": "back-left view",
+                "270": "left side view",
+                "315": "asd"
+            },
+            "elevation": {
+                "0": "eye level",
+                "30": "high angle",
+                "60": "bird's eye view",
+                "90": "top-down view",
+                "-30": "low angle"
+            },
+            "zoom": {
+                "0": "wide shot",
+                "2": "medium-wide shot",
+                "4": "medium shot",
+                "6": "medium close-up",
+                "8": "close-up"
+            }
         }
     }
 }

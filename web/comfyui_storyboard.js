@@ -1196,7 +1196,7 @@ app.registerExtension({
             // Camera Settings Modal with 3D Viewer
             const openCameraSettingsModal = (shotData, refImageNodeId) => {
                 const promptInput = shotData.promptInput;
-                const savedSettings = shotData.cameraSettings || { horizontal: 0, vertical: 0, zoom: 5 };
+                const savedSettings = { horizontal: 0, vertical: 0, zoom: 5, ...(shotData.cameraSettings || {}) };
 
                 // Create modal overlay
                 const modalOverlay = document.createElement("div");
@@ -2217,13 +2217,35 @@ app.registerExtension({
                 confirmBtn.onclick = () => {
                     // Save camera settings to shotData
                     shotData.cameraSettings = { ...currentSettings, presetId: selectedPresetId };
-                    // Append prompt to textarea
-                    const existingText = promptInput.value.trim();
-                    if (existingText) {
-                        promptInput.value = existingText + ", " + currentPrompt;
+
+                    // Smart prompt update
+                    let existingText = promptInput.value;
+                    const lastCamPrompt = shotData.lastCameraPrompt || ""; // Get previous cam prompt
+
+                    if (lastCamPrompt && existingText.includes(lastCamPrompt)) {
+                        // Replace the old camera prompt with the new one
+                        existingText = existingText.replace(lastCamPrompt, currentPrompt);
+                        promptInput.value = existingText;
                     } else {
-                        promptInput.value = currentPrompt;
+                        // Append if not found or first time
+                        if (existingText.trim()) {
+                            // Check if it ends with a comma or space to add gracefully
+                            if (!existingText.trim().endsWith(',')) {
+                                promptInput.value = existingText.trim() + ", " + currentPrompt;
+                            } else {
+                                promptInput.value = existingText.trim() + " " + currentPrompt;
+                            }
+                        } else {
+                            promptInput.value = currentPrompt;
+                        }
                     }
+
+                    // Store the new camera prompt for next time
+                    shotData.lastCameraPrompt = currentPrompt;
+
+                    // Trigger input event to update shotData prompt text
+                    promptInput.dispatchEvent(new Event('input'));
+
                     window.removeEventListener('message', handleMessage);
                     URL.revokeObjectURL(blobUrl);
                     modalOverlay.remove();
@@ -2268,6 +2290,20 @@ app.registerExtension({
                 }
 
                 const card = document.createElement("div");
+
+                // Initialize shotData early
+                card.shotData = {
+                    shotName: shotName,
+                    prompt: initialData ? (initialData.prompt || "") : "",
+                    cameraSettings: initialData && initialData.cameraSettings ? initialData.cameraSettings : { horizontal: 0, vertical: 0, zoom: 5 },
+                    lastCameraPrompt: initialData ? (initialData.lastCameraPrompt || "") : "",
+                    isRunning: false,
+                    lastImageUrl: initialData ? initialData.imageUrl : null,
+                    resultArea: null, // Will be set later
+                    placeholder: null, // Will be set later
+                    promptInput: null // Will be set later
+                };
+
                 card.dataset.shotName = shotName;
                 Object.assign(card.style, {
                     backgroundColor: "#2a2a2a",
@@ -2390,15 +2426,41 @@ app.registerExtension({
                         const workflow = graphData.output;
 
                         // Update the prompt node with card's prompt text
+                        // Update the prompt node with card's prompt text
+                        let promptInjected = false;
                         if (workflow[promptNodeId] && workflow[promptNodeId].inputs) {
-                            // Try common prompt input names
-                            if ('text' in workflow[promptNodeId].inputs) {
-                                workflow[promptNodeId].inputs.text = cardPromptText;
-                            } else if ('prompt' in workflow[promptNodeId].inputs) {
-                                workflow[promptNodeId].inputs.prompt = cardPromptText;
-                            } else if ('positive' in workflow[promptNodeId].inputs) {
-                                workflow[promptNodeId].inputs.positive = cardPromptText;
+                            const inputs = workflow[promptNodeId].inputs;
+                            // Try common prompt input names (order matters)
+                            if ('text' in inputs) {
+                                inputs.text = cardPromptText;
+                                promptInjected = true;
+                            } else if ('text_g' in inputs) { // Standard SDXL CLIP
+                                inputs.text_g = cardPromptText;
+                                if ('text_l' in inputs) inputs.text_l = cardPromptText; // Usually both need update or just G
+                                promptInjected = true;
+                            } else if ('prompt' in inputs) {
+                                inputs.prompt = cardPromptText;
+                                promptInjected = true;
+                            } else if ('positive' in inputs && typeof inputs.positive === 'string') {
+                                // Only inject if it's a string widget, not a connection
+                                inputs.positive = cardPromptText;
+                                promptInjected = true;
+                            } else if ('string' in inputs) {
+                                inputs.string = cardPromptText;
+                                promptInjected = true;
+                            } else if ('value' in inputs) {
+                                inputs.value = cardPromptText;
+                                promptInjected = true;
                             }
+                        }
+
+                        if (!promptInjected) {
+                            alert(t("promptInjectionFailed") + ": " + promptNodeId + "\n" + t("checkNodeId"));
+                            // Reset button logic to avoid getting stuck?
+                            // For now let it continue but it will produce same image
+                            // Actually, better to return? 
+                            // But maybe user wants to run regardless. 
+                            // Let's just alert.
                         }
 
                         // Update save node with filename prefix
@@ -2827,62 +2889,102 @@ app.registerExtension({
                 };
 
                 // Prompt area
-                const promptArea = document.createElement("div");
-                Object.assign(promptArea.style, {
-                    padding: "8px"
+                const promptContainer = document.createElement("div");
+                Object.assign(promptContainer.style, {
+                    padding: "12px",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "8px",
+                    position: "relative" // For clear button positioning
                 });
 
                 const promptLabel = document.createElement("label");
-                promptLabel.textContent = t("promptLabel");
-                promptLabel.dataset.i18n = "promptLabel";
+                promptLabel.textContent = t("prompt");
                 Object.assign(promptLabel.style, {
-                    color: "#aaa",
+                    color: "#888",
                     fontSize: "11px",
-                    display: "block",
-                    marginBottom: "4px"
+                    fontWeight: "bold"
+                });
+
+                const promptInputWrapper = document.createElement("div");
+                Object.assign(promptInputWrapper.style, {
+                    position: "relative",
+                    width: "100%"
                 });
 
                 const promptInput = document.createElement("textarea");
-                promptInput.placeholder = t("placeholder");
-                promptInput.dataset.i18nPlaceholder = "placeholder";
+                promptInput.value = initialData ? (initialData.prompt || "") : "";
+                promptInput.placeholder = t("enterPrompt");
                 Object.assign(promptInput.style, {
                     width: "100%",
-                    height: "60px",
+                    minHeight: "60px",
                     backgroundColor: "#1a1a1a",
                     border: "1px solid #444",
                     borderRadius: "4px",
-                    color: "white",
+                    color: "#eee",
                     padding: "8px",
+                    paddingRight: "24px", // Make room for clear button
                     fontSize: "12px",
-                    resize: "none",
-                    boxSizing: "border-box",
-                    fontFamily: "inherit"
+                    resize: "vertical",
+                    boxSizing: "border-box"
                 });
+
+                // Clear button
+                const clearBtn = document.createElement("div");
+                clearBtn.innerHTML = "×";
+                Object.assign(clearBtn.style, {
+                    position: "absolute",
+                    top: "4px",
+                    right: "4px",
+                    width: "16px",
+                    height: "16px",
+                    backgroundColor: "rgba(255, 255, 255, 0.1)",
+                    color: "#aaa",
+                    borderRadius: "50%",
+                    textAlign: "center",
+                    lineHeight: "15px",
+                    fontSize: "14px",
+                    cursor: "pointer",
+                    userSelect: "none",
+                    zIndex: "10"
+                });
+                clearBtn.title = t("clear"); // "Clear"
+                clearBtn.onmouseenter = () => { clearBtn.style.backgroundColor = "rgba(255, 50, 50, 0.5)"; clearBtn.style.color = "white"; };
+                clearBtn.onmouseleave = () => { clearBtn.style.backgroundColor = "rgba(255, 255, 255, 0.1)"; clearBtn.style.color = "#aaa"; };
+
+                clearBtn.onclick = (e) => {
+                    e.stopPropagation(); // Prevent bubbling
+                    promptInput.value = "";
+                    promptInput.dispatchEvent(new Event('input')); // Trigger update
+                };
+
+                promptInput.oninput = () => {
+                    card.shotData.prompt = promptInput.value; // Corrected: use card.shotData
+                    saveStoryboardData();
+                };
+
                 promptInput.onfocus = () => promptInput.style.borderColor = "#44ccff";
                 promptInput.onblur = () => {
                     promptInput.style.borderColor = "#444";
                     saveStoryboardData(); // Auto-save when prompt text changes
                 };
 
-                promptArea.appendChild(promptLabel);
-                promptArea.appendChild(promptInput);
+                promptInputWrapper.appendChild(promptInput);
+                promptInputWrapper.appendChild(clearBtn);
+                promptContainer.appendChild(promptLabel);
+                promptContainer.appendChild(promptInputWrapper);
 
                 card.appendChild(header);
                 card.appendChild(resultArea);
-                card.appendChild(promptArea);
+                card.appendChild(promptContainer);
 
-                // Store references for later use
-                card.shotData = {
-                    name: shotName,
-                    resultArea,
-                    promptInput,
-                    placeholder,
-                    lastImageUrl: null,
-                    cameraSettings: { horizontal: 0, vertical: 0, zoom: 5 },
-                    getFileName: () => `${shotName}_${String(generateCount).padStart(4, '0')}.png`,
-                    getGenerateCount: () => generateCount,
-                    setGenerateCount: (val) => { generateCount = val; }
-                };
+                // Store DOM element references in shotData (object was initialized earlier)
+                card.shotData.resultArea = resultArea;
+                card.shotData.promptInput = promptInput;
+                card.shotData.placeholder = placeholder;
+                card.shotData.getFileName = () => `${shotName}_${String(generateCount).padStart(4, '0')}.png`;
+                card.shotData.getGenerateCount = () => generateCount;
+                card.shotData.setGenerateCount = (val) => { generateCount = val; };
 
                 // Restore initial data if provided
                 if (initialData) {

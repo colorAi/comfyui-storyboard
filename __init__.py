@@ -91,7 +91,8 @@ class StoryboardImageGen:
     CATEGORY = "Storyboard"
 
     def generate(self, model, seed, steps, cfg, sampler_name, scheduler, positive, negative, latent_image, denoise=1.0):
-        return comfy.sample.sample(model, seed, steps, cfg, sampler_name, scheduler, positive, negative, latent_image, denoise=denoise)
+        noise = comfy.sample.prepare_noise(latent_image, seed)
+        return comfy.sample.sample(model, noise, steps, cfg, sampler_name, scheduler, positive, negative, latent_image, denoise=denoise, seed=seed)
 
 NODE_CLASS_MAPPINGS = {
     "StoryboardImageGen": StoryboardImageGen
